@@ -1,0 +1,6 @@
+{
+  "name": "shiawase-skills",
+  "description": "幸せ貢献業のAI共通スキル。SOP生成・取扱説明フロー生成などをClaude CodeとCoworkの両方で同一動作させる。",
+  "version": "1.0.0",
+  "author": { "name": "Tomohiro Ito" }
+}

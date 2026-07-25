@@ -1,24 +1,50 @@
 # claude-skills
 
-幸せ貢献業のClaude Codeスキル専用リポジトリ（工具箱）。
+幸せ貢献業のAI共通スキル リポジトリ（共有書棚）。
+Claude CodeとCowork（デスクトップアプリ）が**同じスキルで動く**ためのプラグインマーケットプレイス。
 
 ## 目的
 
-- Claude Codeで使うスキルを1か所で管理し、全PC・コワークから安全に取り出せるようにする
+- スキルの正本を1か所（このリポジトリ）に置き、全AI・全PCが同じスキルを使う
 - Vault本体（機密情報を含む）とは分離し、スキル定義のみを保存する
 
-## 構成
+## 構成（プラグインマーケットプレイス形式）
 
 ```
 claude-skills/
-└─ skills/
-   ├─ sop/         業務フローから13列のSOP Excelを生成する
-   ├─ zukai/       初めて触る人向けのHTML取扱説明フローを生成する
-   └─ zukai-edit/  zukaiで作成したHTMLを修正する
+├─ .claude-plugin/
+│   └─ marketplace.json          マーケットプレイス定義（名前：shiawase）
+└─ plugins/
+    └─ shiawase-skills/          プラグイン本体
+        ├─ .claude-plugin/
+        │   └─ plugin.json
+        └─ skills/
+            ├─ sop/              業務フローから13列のSOP Excelを生成する
+            ├─ zukai/            初めて触る人向けのHTML取扱説明フローを生成する
+            └─ zukai-edit/       zukaiで作成したHTMLを修正する
 ```
+
+## 使い方
+
+### Claude Code（初回のみ）
+
+```
+/plugin marketplace add meiyu14-tech/claude-skills
+/plugin install shiawase-skills@shiawase
+```
+
+呼び出し例：`/shiawase-skills:sop`
+
+### Cowork（デスクトップアプリ・初回のみ）
+
+1. ワークスペースの「カスタマイズ」を開く
+2. 「プラグイン」タブ → 「マーケットプレイスを追加」
+3. `https://github.com/meiyu14-tech/claude-skills.git` を貼り付ける
+4. `shiawase-skills` の「インストール」を押す
 
 ## 運用ルール
 
-- スキルの正本はこのリポジトリ。Vaultの `.claude/skills/` へコピーして使用する
+- スキルの正本はこのリポジトリ。追加・修正したら必ずコミット・プッシュする
 - 機密情報（顧客名・金額・契約内容・原発関連の固有名詞）はスキルに書かない
-- スキルを追加・修正したら必ずこのリポジトリにコミット・プッシュする
+- スキルの追加は `plugins/shiawase-skills/skills/<スキル名>/SKILL.md` を作成する
+- 更新後、各環境では `/plugin update` またはマーケットプレイスの再読み込みで最新化される

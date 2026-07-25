@@ -1,0 +1,11 @@
+{
+  "name": "shiawase",
+  "owner": { "name": "Tomohiro Ito" },
+  "plugins": [
+    {
+      "name": "shiawase-skills",
+      "source": "./plugins/shiawase-skills",
+      "description": "幸せ貢献業のAI共通スキル（Claude Code・Cowork共用）"
+    }
+  ]
+}
