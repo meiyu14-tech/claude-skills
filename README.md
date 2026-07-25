@@ -20,6 +20,7 @@ claude-skills/
         │   └─ plugin.json
         └─ skills/
             ├─ common-rules/     全スキル共通の運用ルール（正本・14項）
+            ├─ gijiroku/        会議記録を8項目のMarkdown議事録にまとめる
             ├─ kikaku/           社内判断用の企画書（Markdown）を生成する
             ├─ sop/              業務フローから13列のSOP Excelを生成する
             ├─ zukai/            初めて触る人向けのHTML取扱説明フローを生成する
