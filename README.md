@@ -20,6 +20,7 @@ claude-skills/
         │   └─ plugin.json
         └─ skills/
             ├─ common-rules/     全スキル共通の運用ルール（正本・14項）
+            ├─ asa/              朝の全体把握。期限切れ・放置・予定を集めて今日やる3つを出す
             ├─ douga/            動画URLを内容のわかるタスク（Trelloカード＋台帳）に変換する
             ├─ gijiroku/        会議記録を8項目のMarkdown議事録にまとめる
             ├─ kikaku/           社内判断用の企画書（Markdown）を生成する
