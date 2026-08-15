@@ -192,7 +192,38 @@ def render_drafts(test_mode):
 {btns}</div>""")
     if not cards:
         cards.append("<p>表示できる投稿案がまだありません（毎晩21時に翌日分が作られます）。</p>")
+    cards.append(request_box())
     return page("".join(cards), test_mode)
+
+
+def request_box():
+    """システムへの要望・変更依頼フォーム＋これまでに送った要望の一覧。"""
+    reqs = []
+    f = BASE / "requests.jsonl"
+    if f.exists():
+        for line in f.read_text(encoding="utf-8").splitlines()[-8:]:
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            mark = {"new": "🕒 未対応", "done": "✅ 対応済み"}.get(r.get("status", "new"), "")
+            reqs.insert(0, f"<div style='border-bottom:1px solid #f0efee;padding:6px 0;font-size:13px'>"
+                          f"<span class='meta'>{r.get('at','')[:16]}　{mark}</span><br>{html.escape(r.get('text',''))}</div>")
+    hist = "".join(reqs) or "<div class='meta'>まだ要望はありません</div>"
+    return f"""<div class="card" style="border:2px solid #6366f1">
+<h2>💬 システムへの要望・変更依頼</h2>
+<div class="meta">「投稿の書き方をこう変えて」「こういう機能がほしい」など、気づいたことを書いて送ってください。伊藤さんとあなたの携帯に届き、Claudeが対応します。</div>
+<textarea id="reqtext" style="min-height:90px;margin-top:8px" placeholder="例：1枚目をもう少し短くしてほしい／絵文字を減らしたい　など"></textarea>
+<button class="ok" style="background:#6366f1" onclick="sendReq()">要望を送る</button>
+<div class="meta" style="margin-top:12px">最近の要望：</div>{hist}
+<script>
+async function sendReq(){{
+ const t=document.getElementById('reqtext').value.trim();
+ if(!t){{alert('内容を書いてください');return;}}
+ const r=await fetch('/api/request',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{text:t}})}});
+ if(r.ok){{alert('送りました。ありがとうございます！');location.reload();}}else{{alert('送信に失敗しました');}}
+}}
+</script></div>"""
 
 
 LOGIN_PAGE = """<!doctype html><html lang="ja"><head><meta charset="utf-8">
@@ -323,6 +354,19 @@ class Handler(BaseHTTPRequestHandler):
             body_out = json.dumps({"status": status, "detail": "" if status == "posted" else "投稿ログを確認してください"})
             self._send(200 if status == "posted" else 500, body_out, {"Content-Type": "application/json"})
             return
+        if self.path.startswith("/api/receive_cookie"):
+            # noteの合鍵の受け口。1回限りのキー（cookie_otp.txt）が一致したときだけ受け取り、使い捨てる
+            otp_file = BASE / "cookie_otp.txt"
+            qs = parse_qs(urlparse(self.path).query)
+            given = qs.get("k", [""])[0]
+            if not otp_file.exists() or not given or not hmac.compare_digest(given, otp_file.read_text().strip()):
+                self._send(403, "forbidden")
+                return
+            (BASE / "note_cookie.txt").write_text(raw.strip(), encoding="utf-8")
+            os.chmod(BASE / "note_cookie.txt", 0o600)
+            otp_file.unlink()
+            self._send(200, "ok")
+            return
         if self.path == "/api/note_views":
             if not self._authed(conf):
                 self._send(403, "forbidden")
@@ -336,6 +380,28 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
             data.append({"date": date.today().isoformat(), "views": views})
             f.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            self._send(200, "ok")
+            return
+        if self.path == "/api/request":
+            if not self._authed(conf):
+                self._send(403, "forbidden")
+                return
+            text = str(json.loads(raw).get("text", "")).strip()[:1000]
+            if not text:
+                self._send(400, "bad request")
+                return
+            with (BASE / "requests.jsonl").open("a", encoding="utf-8") as rf:
+                rf.write(json.dumps({"at": datetime.now().isoformat(), "text": text, "status": "new"},
+                                    ensure_ascii=False) + "\n")
+            name = conf.get("INSTANCE_NAME", "")
+            for topic in [t.strip() for t in conf.get("NTFY_TOPIC", "").split(",") if t.strip()]:
+                try:
+                    body = json.dumps({"topic": topic, "title": f"【{name}】システムへの要望が届きました",
+                                       "message": text[:160], "tags": ["speech_balloon"]}, ensure_ascii=False).encode()
+                    urllib.request.urlopen(urllib.request.Request("https://ntfy.sh", data=body,
+                                           headers={"Content-Type": "application/json"}), timeout=15)
+                except Exception:
+                    pass
             self._send(200, "ok")
             return
         if self.path == "/api/decide":
