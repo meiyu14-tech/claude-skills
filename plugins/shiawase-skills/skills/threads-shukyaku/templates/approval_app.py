@@ -323,6 +323,21 @@ class Handler(BaseHTTPRequestHandler):
             body_out = json.dumps({"status": status, "detail": "" if status == "posted" else "投稿ログを確認してください"})
             self._send(200 if status == "posted" else 500, body_out, {"Content-Type": "application/json"})
             return
+        if self.path == "/api/note_views":
+            if not self._authed(conf):
+                self._send(403, "forbidden")
+                return
+            try:
+                views = int(json.loads(raw).get("views"))
+            except (ValueError, TypeError):
+                self._send(400, "bad request")
+                return
+            f = BASE / "note_views_manual.json"
+            data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
+            data.append({"date": date.today().isoformat(), "views": views})
+            f.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            self._send(200, "ok")
+            return
         if self.path == "/api/decide":
             if not self._authed(conf):
                 self._send(403, "forbidden")

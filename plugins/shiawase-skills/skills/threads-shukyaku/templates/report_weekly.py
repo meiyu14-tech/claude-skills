@@ -71,6 +71,62 @@ def gemini_learn(key, summary):
         return f"（自動分析は今週作成できませんでした：{str(e)[:80]}）"
 
 
+NOTE_LIKES = BASE / "note_likes_history.json"
+NOTE_VIEWS = BASE / "note_views_manual.json"
+
+
+def fetch_note_likes(creator):
+    """noteの公開APIから全記事のスキ数を取得（ビュー数は非公開のため取得不可）。"""
+    items = {}
+    titles = {}
+    for page in range(1, 6):
+        url = f"https://note.com/api/v2/creators/{creator}/contents?kind=note&page={page}"
+        try:
+            data = json.loads(urllib.request.urlopen(url, timeout=60).read().decode())
+        except Exception:
+            break
+        c = data.get("data", {})
+        for n in c.get("contents", []):
+            items[n.get("key", "")] = n.get("likeCount", 0)
+            titles[n.get("key", "")] = n.get("name", "")[:30]
+        if c.get("isLastPage"):
+            break
+    return items, titles
+
+
+def note_section(conf):
+    creator = conf.get("NOTE_CREATOR", "")
+    if not creator:
+        return ""
+    items, titles = fetch_note_likes(creator)
+    hist = json.loads(NOTE_LIKES.read_text(encoding="utf-8")) if NOTE_LIKES.exists() else []
+    prev = hist[-1]["items"] if hist else {}
+    hist.append({"date": date.today().isoformat(), "items": items})
+    NOTE_LIKES.write_text(json.dumps(hist, ensure_ascii=False), encoding="utf-8")
+    total = sum(items.values())
+    delta = total - sum(prev.values()) if prev else 0
+    rows = "".join(
+        f"<tr><td>{titles.get(k,'')}</td><td class='num'>{v}</td>"
+        f"<td class='num'>{'+' + str(v - prev.get(k, 0)) if prev and v - prev.get(k, 0) > 0 else '—'}</td></tr>"
+        for k, v in sorted(items.items(), key=lambda kv: -kv[1])) or "<tr><td colspan='3'>記事なし</td></tr>"
+
+    manual = json.loads(NOTE_VIEWS.read_text(encoding="utf-8")) if NOTE_VIEWS.exists() else []
+    mv_rows = "".join(f"<tr><td>{m['date']}</td><td class='num'>{m['views']:,}</td></tr>" for m in manual[-5:]) \
+        or "<tr><td colspan='2'>まだ入力がありません</td></tr>"
+
+    return f"""<div class="card"><h2>note側の反応（スキ数・自動取得）</h2>
+<table><tr><th>記事</th><th class="num" style="width:16%">スキ</th><th class="num" style="width:16%">今週</th></tr>{rows}</table>
+<div class="sub" style="margin-top:6px">合計スキ {total}（前回比 {'+' if delta >= 0 else ''}{delta}）</div></div>
+<div class="card"><h2>noteのビュー数（手入力・週1回）</h2>
+<div class="sub">ビュー数はnoteが外部公開していないため、<a href="https://note.com/sitesettings/stats">noteのアクセス状況画面</a>の「全体ビュー」を見て入力してください</div>
+<table><tr><th>入力日</th><th class="num">全体ビュー</th></tr>{mv_rows}</table>
+<div style="margin-top:8px"><input id="nv" type="number" placeholder="今週の全体ビュー" style="font-size:15px;padding:8px;border:1px solid #d6d3d1;border-radius:8px;width:60%">
+<button onclick="saveNv()" style="font-size:15px;padding:8px 14px;border:none;border-radius:8px;background:#1c1917;color:#fff">保存</button></div>
+<script>async function saveNv(){{const v=document.getElementById('nv').value;if(!v)return;
+const r=await fetch('/api/note_views',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{views:parseInt(v)}})}});
+alert(r.ok?'保存しました（次回のレポート生成から表に載ります）':'保存できませんでした');}}</script></div>"""
+
+
 def notify(conf, title, message):
     for topic in [t.strip() for t in conf.get("NTFY_TOPIC", "").split(",") if t.strip()]:
         try:
@@ -193,7 +249,7 @@ th{{color:#78716c;font-weight:normal}}.num{{text-align:right}}.rank{{font-weight
 <h1>📊 Threads週次レポート</h1>
 <div style="margin-bottom:10px"><a href="/" style="color:#1d4ed8;font-size:14px">← 投稿の承認ページへ戻る</a></div>
 <div class="sub">{week_start.strftime('%Y年%m月%d日')}〜{week_end.strftime('%m月%d日')}｜作成 {datetime.now().strftime('%m/%d %H:%M')}</div>
-<div class="card"><h2>今週のまとめ</h2><div class="tiles">
+<div class="card"><h2>今週のまとめ（Threads側）</h2><div class="tiles">
 <div class="tile"><div class="n">{len(posts)}</div><div class="l">投稿数</div></div>
 <div class="tile"><div class="n">{views:,}</div><div class="l">合計閲覧数</div><div class="d">{pct(views, p_views)}</div></div>
 <div class="tile"><div class="n">{likes:,}</div><div class="l">合計いいね</div><div class="d">{pct(likes, p_likes)}</div></div>
@@ -213,6 +269,7 @@ th{{color:#78716c;font-weight:normal}}.num{{text-align:right}}.rank{{font-weight
 <div class="sub" style="margin-top:6px">計画：8/17まで夕17:30／8/18から夜21:00に切り替えて比較</div></div>
 <div class="card"><h2>noteリンクがクリックされた時間帯</h2><table>
 <tr><th>時間帯</th><th class="num">クリック数</th></tr>{rows_click()}</table></div>
+{note_section(conf)}
 <div class="card"><h2>今週の学び（自動分析）</h2><div class="learn">{learn}</div></div>
 </div></body></html>"""
     OUT.write_text(html_out, encoding="utf-8")
