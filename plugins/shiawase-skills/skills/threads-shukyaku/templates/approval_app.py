@@ -159,6 +159,7 @@ window.addEventListener('resize',fitPv);
 
 
 def render_drafts(test_mode):
+    handle = env().get("THREADS_HANDLE", "（アカウント名未設定）")
     today = date.today()
     cards = []
     for d in (today, today + timedelta(days=1)):
@@ -186,7 +187,7 @@ def render_drafts(test_mode):
 <div class="meta" style="margin-top:8px">2枚目（返信に続く文章）：</div>
 <textarea {dis} style="min-height:140px">{html.escape(p['reply'])}</textarea>
 <div class="meta" style="margin-top:10px">Threadsでの見え方（スマホと同じ幅・自動更新）：</div>
-<div class="tpv"><div class="tuser">ribon.kenchiku.shukatsu2</div><div class="tbody"></div>
+<div class="tpv"><div class="tuser">{handle}</div><div class="tbody"></div>
 <div class="tuser" style="border-top:1px solid #f5f5f4;padding-top:8px;margin-top:8px">↳ 返信（2枚目）</div><div class="tbody"></div></div>
 <div class="warnnote"></div>
 {btns}</div>""")
