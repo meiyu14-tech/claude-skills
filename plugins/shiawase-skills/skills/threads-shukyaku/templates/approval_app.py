@@ -8,6 +8,7 @@ import hmac
 import html
 import json
 import os
+import subprocess
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -35,6 +36,23 @@ def slot_label(slot, date_str):
     except ValueError:
         h = 17
     return "夕 17:30" if h == 17 else f"夜 {h}:00"
+
+
+def slot_time_passed(slot, date_str):
+    """その投稿の予定時刻がすでに過ぎているか。"""
+    try:
+        d = date.fromisoformat(date_str)
+    except ValueError:
+        return False
+    now = datetime.now()
+    if d < now.date():
+        return True
+    if d > now.date():
+        return False
+    if slot == "morning":
+        return (now.hour, now.minute) >= (7, 30)
+    h = evening_hour(d)
+    return (now.hour, now.minute) >= ((h, 30) if h == 17 else (h, 0))
 STATUS_LABEL = {
     "draft": ("未確認", "#b45309", "#fef3c7"),
     "approved": ("承認済み（自動投稿されます）", "#166534", "#dcfce7"),
@@ -82,7 +100,9 @@ h1{{font-size:20px}} h2{{font-size:16px;margin:4px 0}}
 .tpv .tbody div{{min-height:1.6em}}
 .tpv .warn{{background:#fee2e2;border-left:3px solid #dc2626}}
 .warnnote{{font-size:13px;margin-top:4px}}
-</style></head><body><h1>Threads投稿の承認</h1>{mode}{body}
+</style></head><body><h1>Threads投稿の承認</h1>
+<div style="margin-bottom:12px"><a href="/report" style="color:#1d4ed8;font-size:14px">📊 分析レポートを見る →</a></div>
+{mode}{body}
 <script>
 function cw(ch){{return /[\\u0020-\\u00FF\\uFF61-\\uFF9F]/.test(ch)?0.5:1;}}
 function lastLine(par){{let cur=0;for(const c of par){{const w=cw(c);cur=(cur+w>24)?w:cur+w;}}return cur;}}
@@ -113,6 +133,15 @@ async function decide(d,s,a){{
  const body={{date:d,slot:s,action:a,main:ta[0].value,reply:ta[1].value}};
  const r=await fetch('/api/decide',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
  if(r.ok){{location.reload();}}else{{alert('保存に失敗しました');}}
+}}
+async function postNow(d,s){{
+ if(!confirm('今すぐThreadsに投稿します。よろしいですか？'))return;
+ const btns=document.querySelectorAll('#'+CSS.escape(d+'-'+s)+' button');
+ btns.forEach(b=>b.disabled=true);
+ const r=await fetch('/api/post_now',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{date:d,slot:s}})}});
+ const j=await r.json().catch(()=>({{}}));
+ if(r.ok&&j.status==='posted'){{alert('投稿しました');}}else{{alert('投稿できませんでした：'+(j.detail||'ログを確認してください'));}}
+ location.reload();
 }}
 function fitPv(){{
  document.querySelectorAll('.tpv .tbody').forEach(b=>{{
@@ -145,6 +174,10 @@ def render_drafts(test_mode):
             btns = (f"<button class='ok' onclick=\"decide('{data['date']}','{p['slot']}','approve')\">承認する</button>"
                     f"<button class='ng' onclick=\"decide('{data['date']}','{p['slot']}','reject')\">却下する</button>"
                     f"<button class='save' onclick=\"decide('{data['date']}','{p['slot']}','save')\">修正だけ保存</button>") if editable else ""
+            if p["status"] == "approved" and data["date"] == date.today().isoformat() and slot_time_passed(p["slot"], data["date"]):
+                btns += (f"<button class='save' style='border:2px solid #1d4ed8;color:#1d4ed8;background:#eff6ff' "
+                         f"onclick=\"postNow('{data['date']}','{p['slot']}')\">⚡ 今すぐ投稿する</button>"
+                         "<div class='meta' style='margin-top:4px'>予定時刻を過ぎているため自動では投稿されません。このボタンでその場で投稿できます</div>")
             cards.append(f"""<div class="card" id="{data['date']}-{p['slot']}">
 <h2>{slot_label(p['slot'], data['date'])} <span class="badge" style="color:{fg};background:{bg}">{label}</span></h2>
 <div class="meta">元記事：{html.escape(p['article_title'])}</div>
@@ -267,6 +300,28 @@ class Handler(BaseHTTPRequestHandler):
                            {"Set-Cookie": f"t_auth={token(conf)}; Max-Age=7776000; Path=/; HttpOnly; Secure; SameSite=Lax"})
             else:
                 self._send(200, LOGIN_PAGE.replace("{msg}", "<p style='color:#b91c1c'>合言葉が違います</p>"))
+            return
+        if self.path == "/api/post_now":
+            if not self._authed(conf):
+                self._send(403, "forbidden")
+                return
+            req = json.loads(raw)
+            if req.get("date") != date.today().isoformat() or req.get("slot") not in ("morning", "evening"):
+                self._send(400, json.dumps({"detail": "今日の分のみ投稿できます"}), {"Content-Type": "application/json"})
+                return
+            try:
+                subprocess.run(["python3", str(BASE / "threads_poster.py"), req["slot"], "--force"],
+                               cwd=BASE, timeout=180, capture_output=True)
+            except subprocess.TimeoutExpired:
+                self._send(500, json.dumps({"detail": "時間切れ"}), {"Content-Type": "application/json"})
+                return
+            f = DRAFTS_DIR / f"{req['date']}.json"
+            status = ""
+            if f.exists():
+                data = json.loads(f.read_text(encoding="utf-8"))
+                status = next((p["status"] for p in data["posts"] if p["slot"] == req["slot"]), "")
+            body_out = json.dumps({"status": status, "detail": "" if status == "posted" else "投稿ログを確認してください"})
+            self._send(200 if status == "posted" else 500, body_out, {"Content-Type": "application/json"})
             return
         if self.path == "/api/decide":
             if not self._authed(conf):

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import time
 import unicodedata
 import urllib.request
 import urllib.error
@@ -51,6 +52,20 @@ SEASON_ARTICLES = {
 }
 MORNING_TYPES = ["ノウハウ型", "問題提起型"]
 EVENING_TYPES = ["経験談型", "問いかけ型"]
+
+# 表記ルール（2026-08-15 伊藤さん指示）。生成後に必ず機械置換して保証する
+REPLACEMENTS = [
+    ("夏インターン", "夏季インターン"),
+    ("OBOG", "OB・OG"),
+    ("OB/OG", "OB・OG"),
+    ("🎀", "🌸"),
+]
+
+
+def sanitize(text):
+    for a, b in REPLACEMENTS:
+        text = text.replace(a, b)
+    return text
 
 SERIES_TITLE = "地方大学でも戦える就活戦略"
 # 記事No → 編名（1枚目の題名に使う）
@@ -217,8 +232,11 @@ def build_prompt(art, slot, target_date):
 # 投稿の形（重要）
 1枚目（main）と、その返信につなげる2枚目（reply）の**続きもの**として書く。
 - 1枚目：全角320字以内。**題名は書かない**（システムが冒頭に自動で付けるため、いきなり本文から始める）。書き出しの1行で対象読者が「自分のことだ」と気づける具体性。悩み・状況を描き、**続きが気になるところで切る**（問いかけ・「？」・言いかけで終えるなど）
-- 2枚目：全角400字以内。1枚目の続き。答え・学び・励ましを書き、前向きに締める
-- 1〜2文ごとに改行して読みやすく。ハッシュタグは付けない。絵文字は2枚合計2個まで（🎀🌸など柔らかいもの）
+- **1枚目の最後の行は必ず「引き」で終える**：問いかけ・言いかけ・意外な一言のいずれか。「〜してくれました。」「〜でした。」のような完結した報告文で1枚目を締めるのは禁止
+- 2枚目：全角400字以内。**冒頭の1文は1枚目の最後の「引き」に直接答える形で書き始める**（一般論や別の話題から始めない）。答え・学び・励ましを書き、前向きに締める
+- 時期の話題は、流れに自然に馴染む場合に限り1文まで。唐突に挿入しない
+- 1〜2文ごとに改行して読みやすく。ハッシュタグは付けない。絵文字は2枚合計2個まで（🌸など柔らかいもの。🎀は使わない）
+- 表記ルール：「夏季インターン」と書く（「夏インターン」は不可）。「OB・OG」と中黒入りで書く（「OBOG」は不可）
 - **見た目のルール（重要）**：Threadsのスマホ画面は全角約24文字で自動折り返しされる。各段落（改行で区切られた一かたまり）は、24文字で折り返したときの**最終行が全角8文字以上**になるよう文の長さを調整する。「た、」「す」など1〜7文字だけが次の行にポツンと残る形は禁止。文末の調整（語尾を変える・語を足す/削る）で整える
 - **URLは絶対に書かない**（noteはプロフィール欄から辿れるため）。「プロフィールのnoteに詳しくまとめています」という一言は、自然な流れのときだけ2枚目の最後に入れてよい（毎回は入れない）
 
@@ -254,22 +272,42 @@ def notify(title, message):
             print(f"通知失敗（無視して続行）: {e}")
 
 
+FALLBACK_MODELS = [MODEL, "gemini-3.6-flash", "gemini-3.5-flash"]  # 混雑時はこの順で切り替える
+
+
 def call_gemini(key, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={key}"
+    """Geminiを呼ぶ。混雑エラー（503/429等）は再試行し、だめなら予備モデルに切り替える。"""
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.9},
     }
-    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
-                                 headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=120) as res:
-        data = json.loads(res.read().decode("utf-8"))
-    return json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
+    last_err = None
+    for model in FALLBACK_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        for attempt in range(2):
+            if attempt:
+                print(f"  混雑のため45秒待って再試行（{model}）")
+                time.sleep(45)
+            try:
+                req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                             headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req, timeout=120) as res:
+                    data = json.loads(res.read().decode("utf-8"))
+                return json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
+            except urllib.error.HTTPError as e:
+                last_err = e
+                if e.code not in (429, 500, 502, 503, 504):
+                    raise
+            except (urllib.error.URLError, TimeoutError) as e:
+                last_err = e
+        print(f"  {model} がだめなので予備モデルへ切り替え")
+    raise last_err
 
 
-def main():
+def run():
+    """生成の本体。失敗したら例外を投げる（main側で通知する）。"""
     target = date.today() + timedelta(days=1)
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("--"):
         target = date.fromisoformat(sys.argv[1])
     out_path = DRAFTS_DIR / f"{target.isoformat()}.json"
     if out_path.exists() and "--force" not in sys.argv:
@@ -308,7 +346,8 @@ def main():
         body = out["main"].strip()
         if body.startswith("【"):  # AIが題名を書いてしまった場合は取り除く
             body = "\n".join(body.splitlines()[1:]).strip()
-        main_text = (title + "\n" + body)[:480]
+        main_text = sanitize((title + "\n" + body)[:480])
+        out["reply"] = sanitize(out["reply"].strip())
         drafts["posts"].append({
             "slot": slot, "article_no": no, "article_title": art["title"],
             "article_url": art["url"], "hen": hen, "hen_no": num,
@@ -324,8 +363,18 @@ def main():
     out_path.write_text(json.dumps(drafts, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"保存: {out_path}")
     m, d = target.month, target.day
-    notify("明日の投稿案ができました",
+    notify("【リボン】投稿案ができました",
            f"{m}月{d}日の朝・夕2本の下書きができています。タップして承認ページを開き、確認してください。")
+
+
+def main():
+    try:
+        run()
+    except Exception as e:
+        print(f"生成失敗: {type(e).__name__} {str(e)[:200]}")
+        notify("【リボン】⚠️ 今夜の投稿案が作れませんでした",
+               f"生成中にエラーが起きました（{type(e).__name__}）。自動再試行もだめだったため、明日の下書きはまだありません。管理者に連絡してください。")
+        raise
 
 
 if __name__ == "__main__":

@@ -153,6 +153,19 @@ def main():
             out.append(f"<tr><td class='rank'>{i}位</td><td>{title}</td><td class='num'>{ins.get('views',0):,}</td><td class='num'>{ins.get('likes',0)}</td></tr>")
         return "".join(out)
 
+    def rows_all():
+        """全投稿の明細（合計閲覧数の内訳）。日付順。"""
+        out = []
+        slot_jp = {"morning": "朝", "evening": "夕"}
+        for h in sorted(posts, key=lambda x: (x.get("date", ""), x.get("slot", ""))):
+            ins = h.get("insights", {})
+            title = h.get("main", "").splitlines()[0][:30]
+            link = f"<a href=\"{h.get('threads_url','')}\">開く</a>" if h.get("threads_url") else ""
+            out.append(f"<tr><td>{h.get('date','')[5:]} {slot_jp.get(h.get('slot'),'')}</td><td>{title}</td>"
+                       f"<td class='num'>{ins.get('views',0):,}</td><td class='num'>{ins.get('likes',0)}</td>"
+                       f"<td class='num'>{ins.get('replies',0)}</td><td class='num'>{ins.get('reposts',0) + ins.get('quotes',0)}</td><td>{link}</td></tr>")
+        return "".join(out) or "<tr><td colspan='7'>投稿なし</td></tr>"
+
     def rows_click():
         return "".join(f"<tr><td>{k}</td><td class='num'>{v}</td></tr>" for k, v in hour_buckets.items()) or "<tr><td colspan='2'>まだクリックがありません</td></tr>"
 
@@ -178,6 +191,7 @@ th,td{{padding:7px 6px;border-bottom:1px solid #f0efee;text-align:left;word-brea
 th{{color:#78716c;font-weight:normal}}.num{{text-align:right}}.rank{{font-weight:700;color:#b45309}}
 .learn{{background:#eff6ff;border-radius:10px;padding:10px 12px;font-size:.9em}}</style></head><body><div class="wrap">
 <h1>📊 Threads週次レポート</h1>
+<div style="margin-bottom:10px"><a href="/" style="color:#1d4ed8;font-size:14px">← 投稿の承認ページへ戻る</a></div>
 <div class="sub">{week_start.strftime('%Y年%m月%d日')}〜{week_end.strftime('%m月%d日')}｜作成 {datetime.now().strftime('%m/%d %H:%M')}</div>
 <div class="card"><h2>今週のまとめ</h2><div class="tiles">
 <div class="tile"><div class="n">{len(posts)}</div><div class="l">投稿数</div></div>
@@ -187,6 +201,9 @@ th{{color:#78716c;font-weight:normal}}.num{{text-align:right}}.rank{{font-weight
 <div class="tile" style="border:2px solid #1d4ed8"><div class="n">{len(clicks)}</div><div class="l">noteリンクのクリック</div><div class="d">{pct(len(clicks), p_clicks)}</div></div>
 <div class="tile"><div class="n">{click_rate}</div><div class="l">閲覧→クリック率</div></div>
 </div></div>
+<div class="card"><h2>全投稿の明細（合計閲覧数の内訳）</h2>
+<div style="overflow-x:auto"><table style="min-width:0">
+<tr><th style="width:14%">投稿</th><th>題名</th><th class="num" style="width:13%">閲覧</th><th class="num" style="width:11%">いいね</th><th class="num" style="width:10%">返信</th><th class="num" style="width:12%">再共有</th><th style="width:9%"></th></tr>{rows_all()}</table></div></div>
 <div class="card"><h2>よく読まれた投稿 ベスト3</h2><table>
 <tr><th style="width:9%"></th><th>投稿（1行目）</th><th style="width:17%" class="num">閲覧</th><th style="width:14%" class="num">いいね</th></tr>{rows_rank()}</table></div>
 <div class="card"><h2>編ごとの平均閲覧数</h2><table>
@@ -200,7 +217,7 @@ th{{color:#78716c;font-weight:normal}}.num{{text-align:right}}.rank{{font-weight
 </div></body></html>"""
     OUT.write_text(html_out, encoding="utf-8")
     print(f"レポート作成: {OUT}")
-    notify(conf, "今週のThreadsレポートができました",
+    notify(conf, "【リボン】今週のThreadsレポートができました",
            f"投稿{len(posts)}本・閲覧{views:,}・noteクリック{len(clicks)}。タップで詳細が開きます。")
 
 

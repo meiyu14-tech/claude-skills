@@ -132,7 +132,7 @@ def main():
     if post["status"] != "approved":
         log(f"[{slot}] 状態が {post['status']} のため投稿しません（承認済みのみ投稿）")
         if post["status"] == "draft":
-            notify(conf, f"{slot_jp}の投稿は出ませんでした",
+            notify(conf, f"【リボン】{slot_jp}の投稿は出ませんでした",
                    "承認されていなかったため投稿していません。次回分はページで承認してください。", "warning")
         return
 
@@ -170,6 +170,7 @@ def main():
                             "threads_post_id": post_id, "threads_url": permalink,
                             "reply_post_id": reply_id, "posted_at": datetime.now().isoformat()})
             log(f"[{slot}] ✅ 投稿完了 {permalink}")
+            notify(conf, f"【リボン】{slot_jp}の投稿が完了しました", "1枚目と2枚目（返信）を投稿しました。", "white_check_mark")
             notify(conf, f"{slot_jp}の投稿が完了しました", post["main"][:80] + "…", "white_check_mark")
         except Exception as e:
             post["status"] = "error"
@@ -177,7 +178,7 @@ def main():
                             "main": post["main"], "status": "error", "error": str(e)[:300],
                             "posted_at": datetime.now().isoformat()})
             log(f"[{slot}] ❌ 投稿エラー（再投稿はしません）: {e}")
-            notify(conf, f"{slot_jp}の投稿でエラーが起きました", "自動の再投稿はしません。ログを確認してください。", "x")
+            notify(conf, f"【リボン】{slot_jp}の投稿でエラーが起きました", "自動の再投稿はしません。ログを確認してください。", "x")
 
     f.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     HISTORY.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
