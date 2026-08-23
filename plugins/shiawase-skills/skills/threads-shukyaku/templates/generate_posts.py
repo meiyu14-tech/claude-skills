@@ -306,6 +306,50 @@ def call_gemini(key, prompt):
     raise last_err
 
 
+def past_angles_note(no, history, run_mains):
+    """同じ記事で過去に使った書き出し（切り口）を集めて、次は違う角度で書くよう指示する。"""
+    angles = []
+    for h in history:
+        if h.get("article_no") == no and h.get("main"):
+            first = h["main"].split("\n", 1)[-1].strip().split("\n")[0][:40]
+            if first:
+                angles.append(first)
+    for m in run_mains:
+        first = m.split("\n", 1)[-1].strip().split("\n")[0][:40]
+        if first:
+            angles.append(first)
+    if not angles:
+        return ""
+    lst = "／".join(f"「{a}…」" for a in angles[-6:])
+    return (f"\n# この記事で過去に使った切り口（書き出し）\n{lst}\n"
+            "上とは**違う切り口・違う書き出し**で書くこと。同じ記事でも、悩みの角度・エピソードの入り方・語りかける相手を変えて、毎回新鮮にする。")
+
+
+def check_note_sync(articles):
+    """noteの公開記事と台帳を照合し、台帳に無い公開記事があれば通知（把握漏れ防止）。"""
+    creator = load_env_value("NOTE_CREATOR")
+    if not creator:
+        return
+    try:
+        url = f"https://note.com/api/v2/creators/{creator}/contents?kind=note&page=1"
+        data = json.loads(urllib.request.urlopen(url, timeout=30).read().decode())
+        note_items = {n["key"]: n.get("name", "") for n in data.get("data", {}).get("contents", [])}
+    except Exception as e:
+        print(f"note同期チェック失敗（無視）: {e}")
+        return
+    ledger_keys = set()
+    for a in articles.values():
+        m = re.search(r"/n/(\w+)", a.get("url", ""))
+        if m:
+            ledger_keys.add(m.group(1))
+    missing = [(k, v) for k, v in note_items.items() if k not in ledger_keys]
+    if missing:
+        titles = "／".join(v[-24:] for _, v in missing[:3])
+        print(f"⚠️ 台帳に無い公開記事: {missing}")
+        notify("【リボン】台帳にない公開記事があります",
+               f"noteに公開済みだが台帳に未登録の記事が{len(missing)}本（{titles}）。新しい切り口を出すため、Claudeに台帳追加を頼んでください。")
+
+
 def run():
     """生成の本体。失敗したら例外を投げる（main側で通知する）。"""
     target = date.today() + timedelta(days=1)
@@ -317,14 +361,16 @@ def run():
         return
     key = load_key()
     articles = parse_ledger()
+    check_note_sync(articles)
     history = load_history()
     a_no, p_no = pick_articles(articles, history, target)
 
     drafts = {"date": target.isoformat(), "posts": []}
     used_in_run = {}
+    run_mains = []
     for slot, no in (("morning", a_no), ("evening", p_no)):
         art = articles[no]
-        prompt = build_prompt(art, slot, target) + top_posts_reference(history)
+        prompt = build_prompt(art, slot, target) + top_posts_reference(history) + past_angles_note(no, history, run_mains)
         out = call_gemini(key, prompt)
         for _ in range(2):  # 見た目ルール・？終わりの違反があれば最大2回書き直させる
             probs = layout_problems(out["main"]) + layout_problems(out["reply"])
@@ -352,6 +398,7 @@ def run():
             body = "\n".join(body.splitlines()[1:]).strip()
         main_text = sanitize((title + "\n" + body)[:480])
         out["reply"] = sanitize(out["reply"].strip())
+        run_mains.append(main_text)
         drafts["posts"].append({
             "slot": slot, "article_no": no, "article_title": art["title"],
             "article_url": art["url"], "hen": hen, "hen_no": num,
