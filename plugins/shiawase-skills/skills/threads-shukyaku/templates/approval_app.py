@@ -208,8 +208,11 @@ def request_box():
             except Exception:
                 continue
             mark = {"new": "🕒 未対応", "done": "✅ 対応済み"}.get(r.get("status", "new"), "")
+            ans = r.get("answer", "")
+            ans_html = (f"<div style='background:#eef2ff;border-radius:8px;padding:6px 10px;margin-top:4px'>"
+                        f"<b>Claudeからの返信：</b>{html.escape(ans)}</div>") if ans else ""
             reqs.insert(0, f"<div style='border-bottom:1px solid #f0efee;padding:6px 0;font-size:13px'>"
-                          f"<span class='meta'>{r.get('at','')[:16]}　{mark}</span><br>{html.escape(r.get('text',''))}</div>")
+                          f"<span class='meta'>{r.get('at','')[:16]}　{mark}</span><br>{html.escape(r.get('text',''))}{ans_html}</div>")
     hist = "".join(reqs) or "<div class='meta'>まだ要望はありません</div>"
     return f"""<div class="card" style="border:2px solid #6366f1">
 <h2>💬 システムへの要望・変更依頼</h2>
@@ -391,10 +394,19 @@ class Handler(BaseHTTPRequestHandler):
             if not text:
                 self._send(400, "bad request")
                 return
+            rid = datetime.now().strftime("%Y%m%d%H%M%S")
             with (BASE / "requests.jsonl").open("a", encoding="utf-8") as rf:
-                rf.write(json.dumps({"at": datetime.now().isoformat(), "text": text, "status": "new"},
-                                    ensure_ascii=False) + "\n")
+                rf.write(json.dumps({"id": rid, "at": datetime.now().isoformat(), "text": text,
+                                     "status": "new", "answer": ""}, ensure_ascii=False) + "\n")
             name = conf.get("INSTANCE_NAME", "")
+            # 「仕事の基本アプリ」（127.0.0.1:8896）にタスクとして入れる。内部データは触らずAPI経由・X-Remote-Userで認証
+            try:
+                tbody = json.dumps({"title": f"[{name}要望] {text[:60]}", "src": "承認ページの要望"}, ensure_ascii=False).encode()
+                treq = urllib.request.Request("http://127.0.0.1:8896/task-add", data=tbody,
+                                              headers={"Content-Type": "application/json", "X-Remote-User": "ito"})
+                urllib.request.urlopen(treq, timeout=10)
+            except Exception as e:
+                print(f"仕事アプリ連携失敗（要望は保存済み・無視）: {e}")
             for topic in [t.strip() for t in conf.get("NTFY_TOPIC", "").split(",") if t.strip()]:
                 try:
                     body = json.dumps({"topic": topic, "title": f"【{name}】システムへの要望が届きました",
