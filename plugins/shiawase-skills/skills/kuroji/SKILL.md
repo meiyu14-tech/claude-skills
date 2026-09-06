@@ -272,7 +272,7 @@ python bun_zairyo.py PRJ-YYYYMMDD-NNN
 |:---|:---|
 | 保存先 | `プロジェクト/再建/BUN-YYYYMMDD-NNN.json`（HTMLは同じ名前で機械が作る） |
 | 検査 | **`python bun_kensa.py BUN-….json` が5件PASSしないと出さない** |
-| 渡し方 | **VPSへ置いてURLを渡す**。伊藤さんはリモート操作のため、手元のファイルは見えない。⚠️ map直下ではなく `shiryo/` へ置く（`--deploy` が直下を消すため） |
+| 渡し方 | **JSONを置くだけ。配布は機械がやる。**`python アプリ画面を配る.py` が再建フォルダの `BUN-*.json` を全部見つけ、**JSONからHTMLを作り直して**検査し、`/var/www/map/shiryo/<BUN-ID>.html` へ配る。<br>URL：`https://map.210-131-223-173.sslip.io/shiryo/<BUN-ID>.html`<br>⚠️ **手で scp しない。**手で送る道を残すと、いつか必ず検査を通さずに配る（第5条） |
 | 報告 | 本文には**①判断してほしいこと ②済ませたこと ③URL**の3つだけ（共通ルール項18）。分析と根拠は資料側に置く |
 
 **報告のサマリーに必ず出すもの（隠さない・共通ルール項20）：**
