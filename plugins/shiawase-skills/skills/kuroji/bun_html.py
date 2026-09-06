@@ -172,6 +172,22 @@ def tsukuru(d):
         for k in d["shihyo_an"]:
             sn, sk = SHIHYO_SHURUI.get(k.get("shurui"), (k.get("shurui"), "mi"))
             chui = ('<div class="oshite">%s</div>' % e(k.get("chui"))) if k.get("chui") else ""
+            # ⚠️ 機械がくらべる決まりも、そのまま見せる（人が確かめられるように）
+            ru, rb = k.get("mokuhyo_rule") or {}, ""
+            if ru.get("kata") == "kotei":
+                rb = "%s %s" % (ru.get("enzan") or "", ru.get("atai"))
+            elif ru.get("kata") == "han-i":
+                rb = "%s 〜 %s" % (ru.get("shita"), ru.get("ue"))
+            elif ru.get("kata") == "kijun":
+                rb = "%s %s%s" % (ru.get("enzan") or "", ru.get("kijun") or "",
+                                  (" +%s" % ru["chosei"]) if ru.get("chosei") else "")
+            if rb:
+                chui += '<div class="oshite">くらべ方： %s</div>' % e(rb)
+            st = k.get("santei") or {}
+            if st:
+                chui += ('<div class="oshite">くらべ方の元： %s %s %s %s</div>'
+                         % (e(st.get("bunshi")), e(st.get("shiki")), e(st.get("bunbo")),
+                            e(st.get("bairitsu") or "")))
             a('<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td>'
               '<td>%s %s</td><td><span class="b %s">%s</span>%s</td>'
               '<td><code>%s</code></td><td>%s</td></tr>'
