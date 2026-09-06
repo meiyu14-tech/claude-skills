@@ -20,6 +20,8 @@ import re
 import sys
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # 日本語が化ける端末でも止まらないように
+
 # 本文を切り分ける区切り。⚠️ ラベル表もHTMLも**同じ切り方**にする（食い違わせない）
 # ⚠️ 記号は中身ではないので、区切りとして扱う（&gt; が &;= の形で残るのを防ぐ）
 KUGIRI = r"[／・（）「」【】　 ,.:：、。0-9A-Za-z%△+\-〜～=<>&;÷×#]+"

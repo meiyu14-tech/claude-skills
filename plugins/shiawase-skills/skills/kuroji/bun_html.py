@@ -21,6 +21,8 @@ import json
 import sys
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # 日本語が化ける端末でも止まらないように
+
 # 印（確からしさ）の言い換え。⚠️ 判定はしない。JSONの値を日本語にするだけ
 SHIRUSHI = {
     "jijitsu":   ("事実",       "ok"),

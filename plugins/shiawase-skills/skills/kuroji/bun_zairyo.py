@@ -18,6 +18,8 @@ import sys
 import urllib.error
 import urllib.request
 
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # 日本語が化ける端末でも止まらないように
+
 SAKI = os.environ.get("KIHON_URL") or "https://map.210-131-223-173.sslip.io/kihon-api"
 
 
