@@ -164,19 +164,22 @@ def tsukuru(d):
     # ── 指標 ──────────────────────────────────────────
     if d.get("shihyo_an"):
         a(midashi("08", "測る数字（案）", "目標と目安は別物です"))
-        a('<div class="scroller"><table><thead><tr><th style="width:8%">番号</th>'
-          '<th style="width:18%">名前</th><th style="width:10%">単位</th>'
-          '<th style="width:10%">頻度</th><th style="width:18%">目標（案）</th>'
-          '<th style="width:16%">種類</th><th>もとの仕事</th></tr></thead><tbody>')
+        a('<div class="scroller"><table><thead><tr><th style="width:7%">番号</th>'
+          '<th style="width:15%">名前</th><th style="width:8%">単位</th>'
+          '<th style="width:8%">頻度</th><th style="width:15%">目標（案）</th>'
+          '<th style="width:13%">種類</th><th style="width:9%">もとの仕事</th>'
+          '<th>完了の判定</th></tr></thead><tbody>')
         for k in d["shihyo_an"]:
             sn, sk = SHIHYO_SHURUI.get(k.get("shurui"), (k.get("shurui"), "mi"))
             chui = ('<div class="oshite">%s</div>' % e(k.get("chui"))) if k.get("chui") else ""
             a('<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td>'
               '<td>%s %s</td><td><span class="b %s">%s</span>%s</td>'
-              '<td><code>%s</code></td></tr>'
+              '<td><code>%s</code></td><td>%s</td></tr>'
               % (e(k.get("id")), e(k.get("na")), e(k.get("tani")), e(k.get("hindo")),
                  e(k.get("mokuhyo_an")), shirushi_tag(k.get("shirushi")),
-                 sk, e(sn), chui, e(k.get("moto_shigoto"))))
+                 sk, e(sn), chui, e(k.get("moto_shigoto")),
+                 # ⚠️ **測定が終わった条件**であって、目標を達成した条件ではない
+                 e(k.get("kanryo_hantei"))))
         a('</tbody></table></div></section>')
 
     # ── フェーズ ──────────────────────────────────────
