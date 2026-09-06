@@ -36,7 +36,10 @@ SHURUI = {
     "C-1": ("C-1", "数字を待たず・個別承認", "c1"),
     "C-2": ("C-2", "実測後に判断", "c2"),
 }
-SHIHYO_SHURUI = {"mokuhyo": ("目標", "ok"), "meyasu": ("目安・目標ではない", "mi")}
+SHIHYO_SHURUI = {"mokuhyo": ("目標", "ok"), "meyasu": ("目安・目標ではない", "mi"),
+                 "jijitsu": ("事実・目標を持たない", "mi")}
+# 仮説の判定の言い換え。⚠️ ここでは判定しない。JSONの値を日本語にするだけ
+HANTEI = {"atari": ("当たり", "ok"), "hazure": ("外れ", "ng"), "horyu": ("保留", "mi")}
 
 
 def e(x):
@@ -67,6 +70,12 @@ def tsukuru(d):
     def eda(s):
         return [x for x in kouho if x.get("shurui") == s]
 
+    # 章の番号は数えて振る。⚠️ 2回目以降の分析では章が増えるため、手で書かない
+    ban = [0]
+    def bango():
+        ban[0] += 1
+        return "%02d" % ban[0]
+
     # ── 頭 ────────────────────────────────────────────
     a('<header><p class="eyebrow">%s ／ %s回目の分析 ／ %s</p>'
       % (e(d.get("bun_id")), e(d.get("ban")), e(d.get("sakusei_bi"))))
@@ -76,14 +85,39 @@ def tsukuru(d):
       % (e(d.get("taisho_an")), e(d.get("gyoshu"))))
     if not d.get("jitsu_data_kakunin"):
         a('<span class="tag ng">実データ未確認・数字はすべて想定</span>')
+    if d.get("mae_bun_id"):
+        a('<span class="tag">前の分析：%s</span>' % e(d["mae_bun_id"]))
+    if d.get("prj_id"):
+        a('<span class="tag">%s</span>' % e(d["prj_id"]))
     a('</div>')
     a('<p class="oshite">このページは <code>%s</code> から機械が作っています。'
       'ここに書かれていることは、すべて分析データの中にあります。</p></header>'
       % e((d.get("bun_id") or "") + ".json"))
 
+    # ── 材料 ──────────────────────────────────────────
+    z = d.get("zairyo") or {}
+    if z:
+        a(midashi(bango(), "この分析が使った材料",
+                  "人が画面を見て書き写したものはありません"))
+        a('<div class="scroller"><table><tbody>')
+        for key, na in (("totta_michi", "取ってきた道"), ("shigoto_zenbu", "仕事の数"),
+                        ("jikko_sumi", "実行済み"), ("mi_jikko", "未実行"),
+                        ("jisseki_gyo", "実績の行"), ("hikaku_dekita", "比較できた行"),
+                        ("hyoka_kiroku", "評価OSの記録")):
+            if z.get(key) is not None:
+                a('<tr><th style="width:26%%">%s</th><td>%s</td></tr>'
+                  % (e(na), e(z[key])))
+        if z.get("kijun_michutoku"):
+            a('<tr><th>そろえば比較できるもの</th><td>%s</td></tr>'
+              % "・".join(e(x) for x in z["kijun_michutoku"]))
+        a('</tbody></table></div>')
+        if z.get("chui"):
+            a('<div class="box ng"><p>%s</p></div>' % e(z["chui"]))
+        a('</section>')
+
     # ── 目的と目標 ────────────────────────────────────
     mh = d.get("mokuhyo_an") or {}
-    a(midashi("01", "目的と目標（案）", "正式な目標になるのは、人が承認したあとです"))
+    a(midashi(bango(), "目的と目標（案）", "正式な目標になるのは、人が承認したあとです"))
     a('<div class="scroller"><table><tbody>')
     a('<tr><th style="width:16%%">目的</th><td>%s %s</td></tr>'
       % (e((d.get("mokuteki") or {}).get("bun")),
@@ -96,7 +130,7 @@ def tsukuru(d):
     # ── 現状 ──────────────────────────────────────────
     g = d.get("genjo") or {}
     if g.get("p_l"):
-        a(midashi("02", "赤字の形", g.get("moto") or ""))
+        a(midashi(bango(), "赤字の形", g.get("moto") or ""))
         a('<div class="scroller"><table><thead><tr><th>費目</th>'
           '<th style="width:16%%">割合</th><th style="width:20%%">金額（%s）</th>'
           '</tr></thead><tbody>' % e(g.get("tani")))
@@ -114,8 +148,10 @@ def tsukuru(d):
         a('</section>')
 
     # ── 原因仮説 ──────────────────────────────────────
-    if d.get("kasetsu"):
-        a(midashi("03", "原因の仮説", "それぞれ、どの調査で確かめるかを決めてあります"))
+    # 2回目以降は「判定」が付く。判定があるときだけ、根拠・不足・次を並べる
+    hantei_ari = any(k.get("hantei") for k in (d.get("kasetsu") or []))
+    if d.get("kasetsu") and not hantei_ari:
+        a(midashi(bango(), "原因の仮説", "それぞれ、どの調査で確かめるかを決めてあります"))
         a('<div class="scroller"><table><thead><tr><th style="width:9%">番号</th>'
           '<th>仮説</th><th style="width:9%">印</th>'
           '<th style="width:20%">確かめる調査</th></tr></thead><tbody>')
@@ -124,19 +160,59 @@ def tsukuru(d):
               % (e(k.get("id")), e(k.get("naiyo")),
                  shirushi_tag(k.get("shirushi")), ids(k.get("kensho"))))
         a('</tbody></table></div></section>')
+    elif d.get("kasetsu"):
+        a(midashi(bango(), "原因の仮説（%d件）の判定" % len(d["kasetsu"]),
+                  "材料が足りないものは、外れにせず保留にしています"))
+        for k in d["kasetsu"]:
+            hn, hk = HANTEI.get(k.get("hantei"), (k.get("hantei"), "mi"))
+            a('<div class="dan"><div class="midashi"><span class="n">%s</span>%s'
+              '　<span class="b %s">%s</span></div>'
+              % (e(k.get("id")), e(k.get("naiyo")), hk, e(hn)))
+            a('<div>確かめる調査：%s</div>' % ids(k.get("kensho")))
+            a('<div class="mi2"><b>根拠にした事実</b>%s</div>'
+              % ('<ul>%s</ul>' % "".join('<li>%s</li>' % e(x) for x in k["konkyo"])
+                 if k.get("konkyo") else
+                 '<p class="oshite">なし</p>'))
+            if k.get("wakatta"):
+                a('<div class="mi2"><b>ここまでで言えること</b><p>%s</p></div>'
+                  % e(k["wakatta"]))
+            if k.get("fusoku"):
+                a('<div class="mi2"><b>足りない事実</b><ul>%s</ul></div>'
+                  % "".join('<li>%s</li>' % e(x) for x in k["fusoku"]))
+            if k.get("tsugi"):
+                a('<div class="han"><b>次に確認すること：</b>%s</div>' % e(k["tsugi"]))
+            a('</div>')
+        a('</section>')
+
+    # ── 評価OSから分かったこと ────────────────────────
+    if d.get("hyoka_no_jijitsu"):
+        a(midashi(bango(), "評価OSから戻ってきた事実",
+                  "ここは人の評価ではありません。仕事を進めるうえでの事実として読みます"))
+        for x in d["hyoka_no_jijitsu"]:
+            a('<div class="dan"><div class="midashi"><span class="n">%s</span>%s</div>'
+              % (e(x.get("hyoka_job_id")), e(x.get("shigoto"))))
+            a('<div class="oshite">もとの仕事：<code>%s</code>　'
+              '評価対象者：%s</div>'
+              % (e(x.get("moto_shigoto_id")), e(x.get("hyoka_taisho") or "未設定")))
+            for key, na in (("yonritsu", "4率"), ("jiku_b", "軸B"), ("imi", "この意味"),
+                            ("chui", "注意")):
+                if x.get(key):
+                    a('<div class="mi2"><b>%s</b><p>%s</p></div>' % (e(na), e(x[key])))
+            a('</div>')
+        a('</section>')
 
     # ── 仕事候補 ──────────────────────────────────────
-    for s, no, na, soe in (
-            ("A", "04", "調査・測定の仕事", "測るだけ。店の運営を何も変えません"),
-            ("B", "05", "数字が無くても今すぐ安全に実行する仕事",
+    for s, na, soe in (
+            ("A", "調査・測定の仕事", "測るだけ。店の運営を何も変えません"),
+            ("B", "数字が無くても今すぐ安全に実行する仕事",
              "不可逆でない・お金が動かない・外部に出ない・方針を変えない、の4つをすべて満たすものだけ"),
-            ("C-1", "06", "数字を待たないが、個別の承認が要るもの", ""),
-            ("C-2", "07", "実測の結果を見てから判断するもの", "")):
+            ("C-1", "数字を待たないが、個別の承認が要るもの", ""),
+            ("C-2", "実測の結果を見てから判断するもの", "")):
         xs = eda(s)
         if not xs:
             continue
         ka, sm, kl = SHURUI[s]
-        a(midashi(no, "%s　%s（%d件）" % (ka, na, len(xs)), soe))
+        a(midashi(bango(), "%s　%s（%d件）" % (ka, na, len(xs)), soe))
         a('<div class="scroller"><table><thead><tr><th style="width:9%">番号</th>'
           '<th style="width:29%">仕事</th><th style="width:9%">不可逆</th>'
           '<th style="width:17%">前提</th><th>なぜ今できるのか／なぜ待つのか</th>'
@@ -154,6 +230,12 @@ def tsukuru(d):
             kk = x.get("kensho_kasetsu")
             if kk:
                 riyu += '<div class="oshite">確かめる仮説：<code>%s</code></div>' % e(kk)
+            if x.get("kanryo_hantei"):
+                riyu += ('<div class="oshite">完了の判定：%s</div>'
+                         % e(x["kanryo_hantei"]))
+            if x.get("gate"):
+                riyu += ('<div class="oshite">承認の場所：<code>%s</code></div>'
+                         % e(x["gate"]))
             a('<tr><td><code>%s</code></td><td>%s%s%s%s%s</td>'
               '<td class="c">%s</td><td>%s</td><td>%s</td></tr>'
               % (e(x.get("id")), jigen, e(x.get("na")), tani, kane, yusen,
@@ -163,7 +245,7 @@ def tsukuru(d):
 
     # ── 指標 ──────────────────────────────────────────
     if d.get("shihyo_an"):
-        a(midashi("08", "測る数字（案）", "目標と目安は別物です"))
+        a(midashi(bango(), "測る数字（案）", "目標と目安は別物です"))
         a('<div class="scroller"><table><thead><tr><th style="width:7%">番号</th>'
           '<th style="width:15%">名前</th><th style="width:8%">単位</th>'
           '<th style="width:8%">頻度</th><th style="width:15%">目標（案）</th>'
@@ -200,7 +282,7 @@ def tsukuru(d):
 
     # ── フェーズ ──────────────────────────────────────
     if d.get("phase"):
-        a(midashi("09", "進める順番", "日数は目安です。次へ進むのは条件で決めます"))
+        a(midashi(bango(), "進める順番", "日数は目安です。次へ進むのは条件で決めます"))
         for p in d["phase"]:
             a('<div class="dan"><div class="midashi"><span class="n">%s</span>%s'
               '<span class="oshite">　%s</span></div>'
@@ -212,14 +294,14 @@ def tsukuru(d):
 
     # ── 中止条件 ──────────────────────────────────────
     if d.get("chushi_joken"):
-        a(midashi("10", "やめる・閉じるの判断"))
+        a(midashi(bango(), "やめる・閉じるの判断"))
         a('<ul>%s</ul></section>'
           % "".join('<li>%s</li>' % e(x) for x in d["chushi_joken"]))
 
     # ── Gate ──────────────────────────────────────────
     gt = d.get("gate") or {}
     if gt:
-        a(midashi("11", "人が判断する3か所"))
+        a(midashi(bango(), "人が判断する3か所"))
         a('<div class="scroller"><table><thead><tr><th style="width:12%">Gate</th>'
           '<th style="width:12%">件数</th><th>何を承認するか</th></tr></thead><tbody>')
         for key in ("gate1", "gate2", "gate3"):
@@ -236,9 +318,22 @@ def tsukuru(d):
 
     # ── 再分析の条件 ──────────────────────────────────
     if d.get("saibunseki_joken"):
-        a(midashi("12", "もう一度分析し直す条件"))
+        a(midashi(bango(), "もう一度分析し直す条件"))
         a('<ul>%s</ul></section>'
           % "".join('<li>%s</li>' % e(x) for x in d["saibunseki_joken"]))
+
+    # ── 引き渡し ──────────────────────────────────────
+    hw = d.get("hikiwatashi") or {}
+    if hw:
+        a(midashi(bango(), "次にどこへ渡すか"))
+        a('<div class="scroller"><table><tbody>')
+        if hw.get("gate3_taisho"):
+            a('<tr><th style="width:26%%">承認を待つ仕事</th><td>%s</td></tr>'
+              % ids(hw["gate3_taisho"]))
+        if hw.get("watasanai"):
+            a('<tr><th>渡さないもの</th><td><ul>%s</ul></td></tr>'
+              % "".join('<li>%s</li>' % e(x) for x in hw["watasanai"]))
+        a('</tbody></table></div></section>')
 
     # ── 注意 ──────────────────────────────────────────
     if d.get("chui"):
@@ -305,6 +400,10 @@ code{font-family:Consolas,monospace;font-size:.9em;background:var(--surface2);pa
 .dan .midashi .n{color:var(--acc);margin-right:8px}
 .dan .han{background:var(--ok-bg);border-left:3px solid var(--ok);padding:7px 11px;
  margin-top:8px;font-size:13.5px}
+.dan .mi2{margin-top:8px;font-size:13.5px}
+.dan .mi2 b{display:block;color:var(--ink2);font-size:12.5px;letter-spacing:.04em}
+.dan .mi2 p{margin:0}
+.dan .mi2 ul{margin:2px 0 0}
 footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--line);
  font-size:13px;color:var(--ink3)}
 """

@@ -43,7 +43,14 @@ LABEL_HON = """
 不可逆でない お金が動かない 外部に出ない 方針を変えない の4つをすべて満たすものだけ
 数字を待たないが 個別の承認が要るもの 実測の結果を見てから判断するもの
 数字が無くても今すぐ安全に実行する仕事 調査 測定の仕事 目的と目標
-数字を直すときはJSONを直します から機械が作りました
+数字を直すときはJSONを直します から機械が作りました 事実 目標を持たない
+前の分析 この分析が使った材料 人が画面を見て書き写したものはありません
+取ってきた道 仕事の数 実行済み 未実行 実績の行 比較できた行 評価 の記録
+そろえば比較できるもの の判定 材料が足りないものは 外れにせず保留にしています
+当たり 外れ 保留 根拠にした事実 なし ここまでで言えること 足りない事実
+次に確認すること から戻ってきた事実 ここは人の評価ではありません
+仕事を進めるうえでの事実として読みます 評価対象者 未設定 率 軸 この意味 注意
+承認の場所 次にどこへ渡すか 承認を待つ仕事 渡さないもの
 """
 # ⚠️ ラベル表も本文と**同じ切り方**で刻む。切り方が違うと、同じ言葉が別物になる
 LABEL = {w for w in re.split(KUGIRI + r"|\s+", LABEL_HON + LABEL_RAW) if w}
@@ -52,9 +59,12 @@ LABEL = {w for w in re.split(KUGIRI + r"|\s+", LABEL_HON + LABEL_RAW) if w}
 HISSU = ["bun_id", "ban", "sakusei_bi", "moto_sodan", "taisho_an",
          "mokuteki", "mokuhyo_an", "kasetsu", "shigoto_kouho",
          "shihyo_an", "phase", "gate", "hikiwatashi"]
+# 2回目以降（再分析）だけの必須。⚠️ どの分析の続きかが分からない再分析を通さない
+HISSU_SAI = ["mae_bun_id", "prj_id", "zairyo"]
 HISSU_SHIGOTO = ["id", "shurui", "na", "fukagyaku", "gate", "riyu"]
 HISSU_SHIHYO = ["id", "na", "tani", "hindo", "shurui"]
 SHURUI_OK = {"A", "B", "C-1", "C-2"}
+HANTEI_OK = {"atari", "hazure", "horyu"}
 
 KEKKA = []
 
@@ -110,6 +120,8 @@ def main():
 
     # 3 必須項目が欠けない
     kake = [k for k in HISSU if not d.get(k)]
+    if (d.get("ban") or 1) >= 2:
+        kake += [k for k in HISSU_SAI if not d.get(k)]
     for x in d.get("shigoto_kouho") or []:
         for k in HISSU_SHIGOTO:
             if k not in x:
@@ -152,26 +164,52 @@ def main():
       "JSONに無い文が0件" if not hoka else "JSONに無い文: %s" % hoka[:4])
 
     # 5 分析の中身が薄くない
+    # ⚠️ 2回目以降（再分析）は物差しが違う。**同じ25件をもう一度出すのが仕事ではない。**
+    #    再分析の中身は「仮説を1件残らず判定したか」なので、そこを見る。
+    #    ⚠️ 材料が足りないものを「外れ」にしていないかも、ここで機械が確かめる。
     k = d.get("shigoto_kouho") or []
     n = {s: len([x for x in k if x.get("shurui") == s]) for s in SHURUI_OK}
     usui = []
-    if n["A"] < 10:
-        usui.append("調査A %d件" % n["A"])
-    if n["B"] < 5:
-        usui.append("即実行B %d件" % n["B"])
-    if n["C-1"] + n["C-2"] < 8:
-        usui.append("候補C %d件" % (n["C-1"] + n["C-2"]))
+    saibunseki = (d.get("ban") or 1) >= 2
+    if saibunseki:
+        if not k:
+            usui.append("次の仕事候補 0件")
+        for x in d.get("kasetsu") or []:
+            if x.get("hantei") not in HANTEI_OK:
+                usui.append("%s 判定なし" % x.get("id"))
+                continue
+            if not x.get("tsugi"):
+                usui.append("%s 次に確認することが無い" % x.get("id"))
+            # ⚠️ 根拠となる事実が1つも無いのに「外れ」にしない（比較基準未取得＝外れではない）
+            if x.get("hantei") == "hazure" and not x.get("konkyo"):
+                usui.append("%s 根拠なしで外れ" % x.get("id"))
+            if x.get("hantei") == "horyu" and not x.get("fusoku"):
+                usui.append("%s 保留なのに不足事実が無い" % x.get("id"))
+    else:
+        if n["A"] < 10:
+            usui.append("調査A %d件" % n["A"])
+        if n["B"] < 5:
+            usui.append("即実行B %d件" % n["B"])
+        if n["C-1"] + n["C-2"] < 8:
+            usui.append("候補C %d件" % (n["C-1"] + n["C-2"]))
     if len(d.get("kasetsu") or []) < 3:
         usui.append("仮説 %d件" % len(d.get("kasetsu") or []))
     if len(d.get("shihyo_an") or []) < 3:
         usui.append("指標 %d件" % len(d.get("shihyo_an") or []))
     if len(d.get("phase") or []) < 3:
         usui.append("フェーズ %d件" % len(d.get("phase") or []))
+    if saibunseki:
+        hn = {x: len([y for y in d.get("kasetsu") or [] if y.get("hantei") == x])
+              for x in HANTEI_OK}
+        memo = ("仮説%d件すべて判定（当たり%d／外れ%d／保留%d）／次の仕事候補%d／指標%d"
+                % (len(d.get("kasetsu") or []), hn["atari"], hn["hazure"],
+                   hn["horyu"], len(k), len(d.get("shihyo_an") or [])))
+    else:
+        memo = ("A%d／B%d／C-1が%d／C-2が%d／仮説%d／指標%d／フェーズ%d"
+                % (n["A"], n["B"], n["C-1"], n["C-2"], len(d.get("kasetsu") or []),
+                   len(d.get("shihyo_an") or []), len(d.get("phase") or [])))
     t("5 分析の中身が薄くない", not usui,
-      "A%d／B%d／C-1が%d／C-2が%d／仮説%d／指標%d／フェーズ%d"
-      % (n["A"], n["B"], n["C-1"], n["C-2"], len(d.get("kasetsu") or []),
-         len(d.get("shihyo_an") or []), len(d.get("phase") or []))
-      if not usui else "薄い: %s" % usui)
+      memo if not usui else "薄い: %s" % usui)
 
     ok = sum(1 for _, o, _ in KEKKA if o)
     print("\n" + "=" * 60)
