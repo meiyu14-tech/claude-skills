@@ -44,10 +44,33 @@ def nayose(bun):
         "taisho_an": bun.get("taisho_an"),
         "mokuteki": bun.get("mokuteki"),
         "mokuhyo_an": bun.get("mokuhyo_an"),
+        "prj_id": bun.get("prj_id"),
         # 仕事候補は Gate1 のものだけ。⚠️ C-1／C-2 はここでは正式化しない
         "shigoto_kouho": [x for x in (bun.get("shigoto_kouho") or [])
                           if x.get("gate") == "gate1"],
         "shihyo_an": bun.get("shihyo_an"),
+    }
+
+
+def nayose_gate3(bun):
+    """再分析の「次の仕事候補」だけを渡す形（段9・2026-09-06）。
+
+    ⚠️ **これは正式な仕事ではない。**②の確認待ちに並ぶだけで、
+       正式になるのは人が承認したときだけ。
+    ⚠️ 承認を判断するのに要る4つ（何をする・なぜ必要・どの事実／仮説から・
+       何が分かれば完了か）だけを渡す。分析の全文は①に残す。
+    """
+    return {
+        "bun_id": bun.get("bun_id"),
+        "ban": bun.get("ban"),
+        "mae_bun_id": bun.get("mae_bun_id"),
+        "prj_id": bun.get("prj_id"),
+        "shigoto_kouho": [
+            {"id": x.get("id"), "shurui": x.get("shurui"), "gate": x.get("gate"),
+             "na": x.get("na"), "riyu": x.get("riyu"),
+             "kensho_kasetsu": x.get("kensho_kasetsu"), "zentei": x.get("zentei"),
+             "kanryo_hantei": x.get("kanryo_hantei")}
+            for x in (bun.get("shigoto_kouho") or []) if x.get("gate") == "gate3"],
     }
 
 
@@ -101,15 +124,36 @@ def main():
         print("分析データがありません: %s" % p)
         return 1
     bun = json.loads(p.read_text(encoding="utf-8"))
-    okuru_mono = nayose(bun)
 
-    kazu = len(okuru_mono["shigoto_kouho"] or [])
-    print("送るもの： %s ／ Gate1の仕事 %d件 ／ 指標 %d件"
-          % (okuru_mono["bun_id"], kazu, len(okuru_mono["shihyo_an"] or [])))
+    # ⚠️ 2回目以降（再分析）は、**正式な仕事を作る口へ送らない。**
+    #    Gate3の候補は「確認待ち」へ入るだけ。正式になるのは人が承認したとき。
+    saibunseki = (bun.get("ban") or 1) >= 2
+    if saibunseki:
+        okuru_mono = nayose_gate3(bun)
+        kazu = len(okuru_mono["shigoto_kouho"] or [])
+        print("送るもの： %s（%d回目の分析）／ Gate3の候補 %d件"
+              % (okuru_mono["bun_id"], bun.get("ban"), kazu))
+        print("行き先： %s の確認待ち　⚠️ まだ仕事にはなりません" % okuru_mono.get("prj_id"))
+    else:
+        okuru_mono = nayose(bun)
+        kazu = len(okuru_mono["shigoto_kouho"] or [])
+        print("送るもの： %s ／ Gate1の仕事 %d件 ／ 指標 %d件"
+              % (okuru_mono["bun_id"], kazu, len(okuru_mono["shihyo_an"] or [])))
     print("送り先： %s" % SAKI)
 
     if "--shimesu" in sys.argv:
         print("（--shimesu なので送っていません）")
+        return 0
+
+    if saibunseki:
+        r = okuru("/kouho-kuroji", {"bun": okuru_mono})
+        if r is None:
+            return 1
+        print("○ 確認待ちに入れました： %d件（%s）"
+              % (len(r.get("kouho") or []), r.get("prj")))
+        for x in (r.get("tobashita") or []):
+            print("   飛ばした： %s（%s）" % (x.get("id"), x.get("riyu")))
+        print("⚠️ 正式な仕事はまだ 0件です。人が承認するまで作りません。")
         return 0
 
     r = okuru("/prj-tsukuru", {"bun": okuru_mono})
