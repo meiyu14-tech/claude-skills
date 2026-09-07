@@ -63,7 +63,14 @@ HISSU = ["bun_id", "ban", "sakusei_bi", "moto_sodan", "taisho_an",
          "shihyo_an", "phase", "gate", "hikiwatashi"]
 # 2回目以降（再分析）だけの必須。⚠️ どの分析の続きかが分からない再分析を通さない
 HISSU_SAI = ["mae_bun_id", "prj_id", "zairyo"]
-HISSU_SHIGOTO = ["id", "shurui", "na", "fukagyaku", "gate", "riyu"]
+HISSU_SHIGOTO = ["id", "shurui", "na", "fukagyaku", "gate", "riyu", "kanryo_hantei"]
+# ⚠️ **仕事にも「完了の判定」を必ず出す**（2026-09-07 追加）。
+#    初回分析で出し漏らし、**25件が「まだ書かれていません」のまま本番に並んだ。**
+#    完了の判定を必ず出す決まりは段4で作ったのに、対象を指標だけにして
+#    仕事へ広げなかったのが原因。**目で見て気づけないので機械に見せる。**
+# ⚠️ 前の分析は書き換えない。出し漏らした分は、隣に置く補いの台帳
+#    「kanryo-hantei_<BUN-ID>.json」で埋める。検査はそれも見る。
+HOSOKU_NA = "kanryo-hantei_%s.json"
 HISSU_SHIHYO = ["id", "na", "tani", "hindo", "shurui"]
 SHURUI_OK = {"A", "B", "C-1", "C-2"}
 HANTEI_OK = {"atari", "hazure", "horyu"}
@@ -124,9 +131,14 @@ def main():
     kake = [k for k in HISSU if not d.get(k)]
     if (d.get("ban") or 1) >= 2:
         kake += [k for k in HISSU_SAI if not d.get(k)]
+    # 出し漏らした「完了の判定」を、隣の補いの台帳で埋めているか
+    hosoku = {}
+    hp = p.with_name(HOSOKU_NA % d.get("bun_id"))
+    if hp.exists():
+        hosoku = (json.loads(hp.read_text(encoding="utf-8")) or {}).get("kanryo_hantei") or {}
     for x in d.get("shigoto_kouho") or []:
         for k in HISSU_SHIGOTO:
-            if k not in x:
+            if k not in x and not (k == "kanryo_hantei" and hosoku.get(x.get("id"))):
                 kake.append("%s.%s" % (x.get("id"), k))
         if x.get("shurui") not in SHURUI_OK:
             kake.append("%s.shurui=%s" % (x.get("id"), x.get("shurui")))
