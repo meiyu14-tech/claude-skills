@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""出し漏らした「完了の判定」を、すでに登録済みの仕事へ埋める（2026-09-07）。
+"""すでに登録済みの仕事へ、あとから足りないものを埋める（2026-09-07）。
+
+    ① 完了の判定   kanryo-hantei_<BUN-ID>.json
+    ② だれが行うか yakuwari_<BUN-ID>.json
+
 
 ⚠️ **なぜ要るか**
    初回分析で仕事の完了の判定を出し漏らし、**25件が「まだ書かれていません」のまま
@@ -12,7 +16,7 @@
 ⚠️ **空いている欄だけ埋まる。**すでに入っているものは②が触らない。
 ⚠️ 人がコピペしない。合言葉は環境変数から（bun_okuru.py と同じ決まり）。
 
-    使い方:  python bun_oginau.py <kanryo-hantei_BUN-…….json> [--shimesu]
+    使い方:  python bun_oginau.py <補いの台帳.json> [--shimesu]
 """
 import base64
 import json
@@ -64,24 +68,35 @@ def okuru(michi, karada):
 
 def main():
     if len(sys.argv) < 2:
-        print("使い方: python bun_oginau.py <kanryo-hantei_BUN-…….json> [--shimesu]")
+        print("使い方: python bun_oginau.py <補いの台帳.json> [--shimesu]")
         return 1
     p = Path(sys.argv[1])
     if not p.exists():
         print("補いの台帳がありません: %s" % p)
         return 1
     d = json.loads(p.read_text(encoding="utf-8"))
-    kh = d.get("kanryo_hantei") or {}
-    print("送るもの： %s の完了の判定 %d件" % (d.get("bun_id"), len(kh)))
+    # どちらの補いかは、中身で決める（人に種類を打たせない）
+    if d.get("yakuwari"):
+        nakami, michi, na = d["yakuwari"], "/shigoto-yakuwari", "だれが行うか"
+        karada = {"bun_id": d.get("bun_id"), "prj": d.get("prj_id"),
+                  "yakuwari": nakami}
+    elif d.get("kanryo_hantei"):
+        nakami, michi, na = d["kanryo_hantei"], "/shigoto-oginau", "完了の判定"
+        karada = {"bun_id": d.get("bun_id"), "kanryo_hantei": nakami}
+    else:
+        print("⚠️ kanryo_hantei も yakuwari も入っていません")
+        return 1
+    print("送るもの： %s の%s %d件" % (d.get("bun_id"), na, len(nakami)))
     print("送り先： %s" % SAKI)
-    print("⚠️ 空いている欄だけ埋まります。すでに入っているものは触りません。")
+    print("⚠️ 空いているものだけ入ります。すでに入っているものは触りません。")
     if "--shimesu" in sys.argv:
         print("（--shimesu なので送っていません）")
         return 0
-    r = okuru("/shigoto-oginau", {"bun_id": d.get("bun_id"), "kanryo_hantei": kh})
+    r = okuru(michi, karada)
     if r is None:
         return 1
-    print("○ 入れました： %d件" % len(r.get("umeta") or []))
+    ireta = r.get("umeta") or r.get("ireta") or []
+    print("○ 入れました： %d件" % len(ireta))
     if r.get("sude_ni_atta"):
         print("   すでに入っていた（触っていない）： %s" % "・".join(r["sude_ni_atta"]))
     if r.get("moto_ni_nakatta"):
